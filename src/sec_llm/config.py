@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = {"env_prefix": "SEC_LLM_"}
+    model_config = {"env_prefix": "SEC_LLM_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
     openai_api_key: str
     edgar_identity: str = "SEC-LLM POC dev@example.com"
