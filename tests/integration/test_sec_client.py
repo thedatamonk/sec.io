@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from sec_llm.models.errors import CompanyNotFoundError
+from sec_llm.models import CompanyNotFoundError
 from sec_llm.sec.client import EdgarClient
 
 
