@@ -6,30 +6,26 @@ An AI-powered financial analyst that answers natural language questions about pu
 
 ## How it works
 
-A five-stage pipeline converts a raw user message into a verified, cited answer:
+A single agent with tools converts a raw user message into a cited answer:
 
 ```mermaid
 flowchart LR
-    A([User Query]) --> B[Clarification\nAgent]
-    B -->|needs clarification| C([Follow-up Question])
-    B -->|resolved| D[Planner\nAgent]
-    D --> E[Execution\nEngine]
-    E -->|get_income_statement| F[(SEC EDGAR)]
-    F --> E
-    E -->|compute_*| G[Compute\nFunctions]
-    G --> E
-    E --> H[Summarizer\nAgent]
-    H --> I[Hallucination\nCheck]
-    I --> J([AnalysisResponse])
+    A([User Query]) --> B[Scope\nGuardrail]
+    B -->|out of scope| C([422 Error])
+    B -->|in scope| D[SEC Financial\nAnalyst Agent]
+    D -->|get_income_statement| E[(SEC EDGAR)]
+    E --> D
+    D -->|compute_growth\ncompute_margin| F[Compute\nFunctions]
+    F --> D
+    D --> G([ChatResponse])
 ```
 
 | Stage | What happens |
 |---|---|
-| **Clarification** | Extracts ticker, metric(s), fiscal period(s), and query type from free-form text. Asks a follow-up if confidence is below 0.85. |
-| **Planning** | Produces a typed `ExecutionPlan` — an ordered list of tool calls with cross-step `$step:N:field` references. |
-| **Execution** | Runs plan steps in order. Data steps call SEC EDGAR (async, TTL-cached). Compute steps call pure Python functions. |
-| **Summarization** | A cheaper LLM (`gpt-4o-mini`) narrates the pre-computed results in plain English. It is explicitly prohibited from performing arithmetic. |
-| **Hallucination check** | Every number in the summary is extracted and checked against the truth set of raw values and computation outputs. Unverified numbers are flagged in `guardrails.unverified_numbers`. |
+| **Scope guardrail** | Checks the message before it reaches the LLM. Rejects queries about balance sheets, stock prices, dividends, etc. with a `422`. |
+| **Agent** | A single OpenAI Agents SDK agent decides which tools to call and in what order, then narrates the results in plain English. |
+| **Data tools** | `get_income_statement` fetches 10-K or 10-Q income statement data from SEC EDGAR (async, TTL-cached). |
+| **Compute tools** | `compute_growth` and `compute_margin` perform deterministic arithmetic so the LLM never does math itself. |
 
 ---
 
@@ -38,8 +34,7 @@ flowchart LR
 - **Income statement retrieval** — revenue, net income, EPS, gross profit, and operating income from 10-K and 10-Q filings
 - **Growth computation** — year-over-year and quarter-over-quarter growth rates with explicit formulas
 - **Margin computation** — gross, operating, and net margin percentages
-- **Quarterly aggregation** — sum or average quarterly values into annual figures
-- **Multi-turn clarification** — conversation history is forwarded to the LLM so ambiguities can be resolved across turns
+- **Multi-turn conversations** — conversation history is forwarded to the agent so context carries across turns
 - **Scope enforcement** — queries about balance sheets, cash flows, stock prices, dividends, etc. are rejected before hitting the LLM
 - **Input sanitization** — control characters stripped, length capped at 2000 characters
 - **TTL cache** — EDGAR responses are cached in-process for 15 minutes to avoid redundant network calls
@@ -53,17 +48,14 @@ sec-llm/
 ├── src/sec_llm/
 │   ├── main.py            # FastAPI app factory, CORS middleware, lifespan hooks
 │   ├── config.py          # Settings via pydantic-settings (SEC_LLM_ prefix)
-│   ├── dependencies.py    # @lru_cache DI factories for pipeline, clients, settings
-│   ├── models.py          # All Pydantic schemas: errors, queries, plans, financials, responses
-│   ├── compute.py         # Growth, margin, aggregation functions + COMPUTE_REGISTRY
-│   ├── agents.py          # ClarificationAgentImpl, PlannerAgentImpl, SummarizerAgentImpl
-│   ├── pipeline.py        # ExecutionPlanExecutor + QueryPipeline
-│   ├── guardrails.py      # check_scope, sanitize_input, hallucination verification
-│   ├── formatter.py       # Build citations, raw_data, computations, visualization payloads
+│   ├── dependencies.py    # @lru_cache DI factories for agent, clients, settings
+│   ├── models.py          # Pydantic schemas: errors, financials
+│   ├── compute.py         # Growth and margin computation functions
+│   ├── agent.py           # sec_agent definition: tools + scope guardrail
+│   ├── runner.py          # run_conversation() — OpenAI Agents SDK runner wrapper
+│   ├── guardrails.py      # check_scope, sanitize_input
 │   ├── prompts/
-│   │   ├── clarification_system.txt
-│   │   ├── planner_system.txt
-│   │   └── summarizer_system.txt
+│   │   └── agent_system.txt
 │   ├── api/
 │   │   ├── chat.py        # POST /api/chat
 │   │   ├── company.py     # GET /api/company/{ticker}
@@ -75,70 +67,8 @@ sec-llm/
 │       ├── normalizer.py  # DataFrame label matching + LABEL_CANDIDATES map
 │       └── cache.py       # TTLCache (in-process, monotonic clock)
 └── tests/
-    ├── unit/              # Pure function tests (compute, models, formatter, guardrails)
-    └── integration/       # Pipeline and API tests (mocked SEC + LLM)
-```
-
-### Data flow through models
-
-```mermaid
-classDiagram
-    class UserQuery {
-        +str message
-        +list conversation_history
-    }
-    class ClarifiedQuery {
-        +str ticker
-        +QueryType query_type
-        +list~MetricName~ metrics
-        +list~FiscalPeriod~ periods
-    }
-    class ExecutionPlan {
-        +list~PlanStep~ steps
-        +str reasoning
-    }
-    class PlanStep {
-        +int step_id
-        +str tool
-        +list~ToolCallArg~ args
-        +list~int~ depends_on
-    }
-    class IncomeStatementData {
-        +FilingMetadata metadata
-        +float revenue
-        +float net_income
-        +float gross_profit
-        +float operating_income
-        +float eps_diluted
-        +period_label() str
-        +get_metric(name) float
-    }
-    class AnalysisResponse {
-        +list raw_data
-        +list computations
-        +str summary
-        +list~SourceCitation~ citations
-        +VisualizationPayload visualization
-        +GuardrailInfo guardrails
-        +bool needs_clarification
-    }
-
-    UserQuery --> ClarifiedQuery : clarified by agent
-    ClarifiedQuery --> ExecutionPlan : planned by agent
-    ExecutionPlan "1" *-- "1..*" PlanStep
-    PlanStep --> IncomeStatementData : data steps produce
-    IncomeStatementData --> AnalysisResponse : serialized into raw_data
-```
-
-### Compute registry
-
-```mermaid
-flowchart TD
-    R[COMPUTE_REGISTRY] --> G["compute_yoy_growth\ncompute_qoq_growth\n— both → compute_growth()"]
-    R --> M["compute_margin()"]
-    R --> A["aggregate_quarters()"]
-    D[DATA_TOOLS] --> I["get_income_statement\n→ EdgarClient async"]
-    R & D --> ALL["ALL_TOOL_NAMES\nvalidated at plan time\nand at execution time"]
+    ├── unit/              # Pure function tests (compute, normalizer)
+    └── integration/       # API and SEC client tests
 ```
 
 ---
@@ -149,7 +79,7 @@ flowchart TD
 |---|---|---|
 | `GET` | `/api/health` | Liveness check — returns `{"status": "ok"}` |
 | `GET` | `/api/company/{ticker}` | Company metadata from EDGAR (name, CIK, SIC, exchange) |
-| `POST` | `/api/chat` | Main query endpoint — accepts `UserQuery`, returns `AnalysisResponse` |
+| `POST` | `/api/chat` | Main query endpoint — accepts `ChatRequest`, returns `ChatResponse` |
 
 ### POST /api/chat
 
@@ -161,36 +91,24 @@ flowchart TD
 }
 ```
 
-**Response — resolved**
+**Response**
 ```json
 {
-  "raw_data": [...],
-  "computations": [
-    {
-      "metric_name": "revenue",
-      "current_value": 391035000000,
-      "previous_value": 383285000000,
-      "growth_percentage": 2.02,
-      "formula": "(391,035,000,000.00 - 383,285,000,000.00) / 383,285,000,000.00 = 2.02%"
-    }
-  ],
-  "summary": "Apple's revenue grew 2.02% from FY2023 to FY2024...",
+  "answer": "Apple's revenue grew 2.02% from FY2023 ($383.3B) to FY2024 ($391.0B).",
   "citations": [
-    {"ticker": "AAPL", "filing_type": "10-K", "fiscal_period": "FY2023"},
-    {"ticker": "AAPL", "filing_type": "10-K", "fiscal_period": "FY2024"}
-  ],
-  "visualization": {"chart_type": "comparison", "metric": "revenue", "data": [...]},
-  "guardrails": {"llm_computed_math": false, "unverified_numbers": []},
-  "needs_clarification": false,
-  "follow_up_question": null
-}
-```
-
-**Response — clarification needed**
-```json
-{
-  "needs_clarification": true,
-  "follow_up_question": "Which fiscal year and metric are you asking about?"
+    {
+      "ticker": "AAPL",
+      "filing_type": "10-K",
+      "fiscal_period": "FY2023",
+      "filing_date": "2023-11-03"
+    },
+    {
+      "ticker": "AAPL",
+      "filing_type": "10-K",
+      "fiscal_period": "FY2024",
+      "filing_date": "2024-11-01"
+    }
+  ]
 }
 ```
 
@@ -201,7 +119,6 @@ flowchart TD
 | `422` | Out-of-scope query (balance sheet, stock price, etc.) or invalid input |
 | `404` | Ticker or filing not found in EDGAR |
 | `429` | Rate limit exceeded (20 requests/minute per IP) |
-| `502` | OpenAI API failure |
 
 ---
 
@@ -277,7 +194,7 @@ curl -X POST http://localhost:8000/api/chat \
 
 ```bash
 # Unit + integration tests (no external calls, fast)
-uv run pytest tests/unit/ tests/integration/test_api.py tests/integration/test_pipeline.py -v
+uv run pytest tests/unit/ tests/integration/test_api.py -v
 
 # Full suite including live EDGAR calls
 uv run pytest -v
