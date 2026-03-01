@@ -34,6 +34,13 @@ async def get_income_statement(
     Returns a dict with: revenue, cost_of_revenue, gross_profit, operating_income,
     net_income, eps_basic, eps_diluted (all in dollars), plus filing metadata.
     """
+    if not ticker or not ticker.strip():
+        return {"error": "ticker must be a non-empty string (e.g. 'AAPL')."}
+    if not (2000 <= fiscal_year <= 2030):
+        return {"error": f"fiscal_year {fiscal_year} is out of the supported range (2000–2030)."}
+    if quarter is not None and quarter not in (1, 2, 3, 4):
+        return {"error": f"quarter must be 1, 2, 3, or 4 — got {quarter}."}
+
     from sec_llm.dependencies import get_edgar_client
 
     client = get_edgar_client()
@@ -48,8 +55,8 @@ async def get_income_statement(
 @function_tool
 def compute_growth(
     metric_name: str,
-    current_value: float,
-    prior_value: float,
+    current_value: float | None,
+    prior_value: float | None,
     current_period: str,
     prior_period: str,
 ) -> dict[str, Any]:
@@ -64,6 +71,13 @@ def compute_growth(
 
     Returns growth_rate (decimal), growth_percentage, and a human-readable formula.
     """
+    if current_value is None:
+        return {"error": f"Cannot compute growth for {metric_name}: {current_period} value is not reported in this SEC filing."}
+    if prior_value is None:
+        return {"error": f"Cannot compute growth for {metric_name}: {prior_period} value is not reported in this SEC filing."}
+    if not metric_name or not current_period or not prior_period:
+        return {"error": "metric_name, current_period, and prior_period must be non-empty strings."}
+
     result = _compute_growth(
         metric_name=metric_name,
         current_value=current_value,
@@ -77,14 +91,15 @@ def compute_growth(
 @function_tool
 def compute_margin(
     metric_name: str,
-    numerator: float,
-    revenue: float,
+    numerator: float | None,
+    revenue: float | None,
     period: str,
 ) -> dict[str, Any]:
     """Compute a margin ratio (numerator / revenue).
 
-    Use this for gross margin (gross_profit / revenue), operating margin
-    (operating_income / revenue), or net margin (net_income / revenue).
+    REQUIRED: Always call this tool for any margin calculation — never compute margins inline.
+    Use for gross margin (gross_profit / revenue), operating margin (operating_income / revenue),
+    or net margin (net_income / revenue). Report the margin_percentage from the tool result.
 
     Args:
         metric_name: Name of the margin (e.g. "gross_margin", "operating_margin").
@@ -94,6 +109,13 @@ def compute_margin(
 
     Returns margin_rate (decimal), margin_percentage, and a human-readable formula.
     """
+    if numerator is None:
+        return {"error": f"Cannot compute {metric_name} for {period}: the profit metric value is not reported in this SEC filing."}
+    if revenue is None:
+        return {"error": f"Cannot compute {metric_name} for {period}: revenue is not reported in this SEC filing."}
+    if not metric_name or not period:
+        return {"error": "metric_name and period must be non-empty strings."}
+
     result = _compute_margin(
         metric_name=metric_name,
         numerator=numerator,

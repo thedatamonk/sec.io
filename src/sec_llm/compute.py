@@ -53,6 +53,10 @@ def compute_growth(
     previous_period: str,
 ) -> GrowthResult:
     """Compute growth rate between two periods."""
+    if current_value is None:
+        raise ComputationError(f"Cannot compute growth for {metric_name}: {current_period} value not in filing.")
+    if previous_value is None:
+        raise ComputationError(f"Cannot compute growth for {metric_name}: {previous_period} value not in filing.")
     if previous_value == 0:
         raise ComputationError(
             f"Cannot compute growth for {metric_name}: "
@@ -78,6 +82,10 @@ def compute_margin(
     period: str,
 ) -> MarginResult:
     """Compute a margin ratio (numerator / revenue)."""
+    if numerator is None:
+        raise ComputationError(f"Cannot compute {metric_name} for {period}: metric value not in filing.")
+    if revenue is None:
+        raise ComputationError(f"Cannot compute {metric_name} for {period}: revenue not in filing.")
     if revenue == 0:
         raise ComputationError(
             f"Cannot compute margin for {metric_name}: revenue is zero ({period})"
