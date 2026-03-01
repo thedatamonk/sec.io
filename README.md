@@ -10,12 +10,12 @@ A single agent with tools converts a raw user message into a cited answer:
 
 ```mermaid
 flowchart LR
-    A([User Query]) --> B[Scope\nGuardrail]
+    A([User Query]) --> B[Scope<br/>Guardrail]
     B -->|out of scope| C([422 Error])
-    B -->|in scope| D[SEC Financial\nAnalyst Agent]
+    B -->|in scope| D[SEC Financial<br/>Analyst Agent]
     D -->|get_income_statement| E[(SEC EDGAR)]
     E --> D
-    D -->|compute_growth\ncompute_margin| F[Compute\nFunctions]
+    D -->|compute_growth<br/>compute_margin<br/>aggregate_quarters| F[Compute<br/>Functions]
     F --> D
     D --> G([ChatResponse])
 ```
@@ -25,7 +25,7 @@ flowchart LR
 | **Scope guardrail** | Checks the message before it reaches the LLM. Rejects queries about balance sheets, stock prices, dividends, etc. with a `422`. |
 | **Agent** | A single OpenAI Agents SDK agent decides which tools to call and in what order, then narrates the results in plain English. |
 | **Data tools** | `get_income_statement` fetches 10-K or 10-Q income statement data from SEC EDGAR (async, TTL-cached). |
-| **Compute tools** | `compute_growth` and `compute_margin` perform deterministic arithmetic so the LLM never does math itself. |
+| **Compute tools** | `compute_growth`, `compute_margin`, and `aggregate_quarters` perform deterministic arithmetic so the LLM never does math itself. |
 
 ---
 
@@ -34,6 +34,7 @@ flowchart LR
 - **Income statement retrieval** — revenue, net income, EPS, gross profit, and operating income from 10-K and 10-Q filings
 - **Growth computation** — year-over-year and quarter-over-quarter growth rates with explicit formulas
 - **Margin computation** — gross, operating, and net margin percentages
+- **Quarter aggregation** — sum or average a metric across multiple quarters (e.g. trailing-twelve-months revenue)
 - **Multi-turn conversations** — conversation history is forwarded to the agent so context carries across turns
 - **Scope enforcement** — queries about balance sheets, cash flows, stock prices, dividends, etc. are rejected before hitting the LLM
 - **Input sanitization** — control characters stripped, length capped at 2000 characters
@@ -51,7 +52,7 @@ sec-llm/
 │   ├── dependencies.py    # @lru_cache DI factories for agent, clients, settings
 │   ├── models.py          # Pydantic schemas: errors, financials
 │   ├── compute.py         # Growth and margin computation functions
-│   ├── agent.py           # sec_agent definition: tools + scope guardrail
+│   ├── agent.py           # sec_agent definition: tools + input guardrail
 │   ├── runner.py          # run_conversation() — OpenAI Agents SDK runner wrapper
 │   ├── guardrails.py      # check_scope, sanitize_input
 │   ├── prompts/
@@ -212,7 +213,7 @@ uv run pytest -m slow -v
 | `revenue` | Total net revenue / net sales | 10-K, 10-Q |
 | `net_income` | Net income (loss) | 10-K, 10-Q |
 | `eps` | Diluted earnings per share | 10-K, 10-Q |
-| `gross_margin` | Gross profit raw value | 10-K, 10-Q |
+| `gross_profit` | Gross profit (revenue minus cost of revenue) | 10-K, 10-Q |
 | `operating_income` | Operating income (loss) | 10-K, 10-Q |
 
 Only income statement data is supported. Balance sheet, cash flow, segment, and geographic data are explicitly out of scope.
