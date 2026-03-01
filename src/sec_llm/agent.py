@@ -5,13 +5,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from typing_extensions import TypedDict
+
 from agents import Agent, GuardrailFunctionOutput, RunContextWrapper, function_tool, input_guardrail
 
+from sec_llm.compute import aggregate_quarters as _aggregate_quarters
 from sec_llm.compute import compute_growth as _compute_growth
 from sec_llm.compute import compute_margin as _compute_margin
 from sec_llm.guardrails import check_scope, sanitize_input
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
+# ---------------------------------------------------------------------------
+# Typed schema for aggregate_quarters tool input
+# ---------------------------------------------------------------------------
+
+class QuarterDataPoint(TypedDict):
+    period: str
+    value: float
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +96,34 @@ def compute_growth(
         previous_value=prior_value,
         current_period=current_period,
         previous_period=prior_period,
+    )
+    return result.model_dump()
+
+
+@function_tool
+def aggregate_quarters(
+    metric_name: str,
+    quarter_data: list[QuarterDataPoint],
+    method: str = "sum",
+) -> dict[str, Any]:
+    """Sum or average a metric across multiple quarters.
+
+    Use this for TTM (trailing twelve months) calculations or average quarterly metrics.
+
+    Args:
+        metric_name: The metric name (e.g. "revenue", "net_income").
+        quarter_data: List of dicts with "period" (str) and "value" (float) keys.
+                      Example: [{"period": "Q1 FY2024", "value": 119575000000}, ...]
+        method: "sum" for totals (revenue, income), "average" for rates (margins).
+
+    Returns the aggregated result value, method used, and human-readable formula.
+    """
+    if not quarter_data:
+        return {"error": f"No quarter data provided for {metric_name}."}
+    if method not in ("sum", "average"):
+        return {"error": f"method must be 'sum' or 'average', got '{method}'."}
+    result = _aggregate_quarters(
+        metric_name=metric_name, quarter_data=quarter_data, method=method
     )
     return result.model_dump()
 
@@ -162,7 +202,7 @@ def _get_model() -> str:
 sec_agent = Agent(
     name="SEC Financial Analyst",
     instructions=(_PROMPTS_DIR / "agent_system.txt").read_text(),
-    tools=[get_income_statement, compute_growth, compute_margin],
+    tools=[get_income_statement, compute_growth, compute_margin, aggregate_quarters],
     input_guardrails=[scope_guardrail],
     model=_get_model(),
 )

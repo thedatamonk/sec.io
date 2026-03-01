@@ -26,9 +26,9 @@ OUT_OF_SCOPE_KEYWORDS = [
     "book value",
     "assets",
     "liabilities",
-    "equity",
-    "debt",
     "working capital",
+    # NOTE: "equity", "debt" removed — too broad; "net margin", "profit margin",
+    # "return on sales", "cost ratio" are income-statement-computable and must not be blocked.
 ]
 
 

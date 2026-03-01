@@ -3,6 +3,7 @@
 Usage:
     uv run python tests/run_conversations.py
     uv run python tests/run_conversations.py --ids conv_01 conv_04 conv_07
+    uv run python tests/run_conversations.py --ids conv_11 --console-trace
 """
 
 from __future__ import annotations
@@ -18,6 +19,13 @@ from pathlib import Path
 
 # Ensure the src package is importable
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+# Load .env and mirror SEC_LLM_OPENAI_API_KEY → OPENAI_API_KEY so the agents
+# SDK tracer can export to platform.openai.com/traces.
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
+if not os.environ.get("OPENAI_API_KEY") and os.environ.get("SEC_LLM_OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.environ["SEC_LLM_OPENAI_API_KEY"]
 
 FIXTURES = Path(__file__).parent / "fixtures" / "test_conversations.json"
 
@@ -113,47 +121,53 @@ async def run_conversation(conv: dict) -> dict:
     history: list[dict] = []
     user_turns = [t for t in turns if t["role"] == "user"]
 
-    for i, turn in enumerate(user_turns):
-        message = turn["message"]
-        expected_behavior = turn.get("expected_behavior", "")
+    from agents import trace as agent_trace
 
-        t0 = time.monotonic()
-        try:
-            answer, citations, tool_names = await run_turn(message, history)
-            elapsed = time.monotonic() - t0
-            failures = _check_turn(turn, answer, tool_names)
-        except Exception as exc:
-            elapsed = time.monotonic() - t0
-            exc_str = str(exc)
-            # A triggered guardrail tripwire is the expected outcome for out-of-scope
-            # queries (conv_06). Treat it as a pass when no tool calls are expected.
-            expected_tools = [tc["tool"] for tc in turn.get("expected_tool_calls", [])]
-            if "tripwire" in exc_str.lower() and not expected_tools:
-                answer = f"[Guardrail blocked: {exc_str}]"
-                tool_names = []
-                failures = []
-            else:
-                failures = [f"Exception: {exc}"]
-                answer = ""
-                tool_names = []
+    with agent_trace(
+        workflow_name=f"[test] {conv_id}: {description[:60]}",
+        group_id=conv_id,
+    ):
+        for i, turn in enumerate(user_turns):
+            message = turn["message"]
+            expected_behavior = turn.get("expected_behavior", "")
 
-        turn_result = {
-            "turn": i + 1,
-            "message": message,
-            "answer": answer,
-            "tool_names": tool_names,
-            "expected_behavior": expected_behavior,
-            "failures": failures,
-            "elapsed_s": round(elapsed, 1),
-        }
-        result["turn_results"].append(turn_result)
+            t0 = time.monotonic()
+            try:
+                answer, citations, tool_names = await run_turn(message, history)
+                elapsed = time.monotonic() - t0
+                failures = _check_turn(turn, answer, tool_names)
+            except Exception as exc:
+                elapsed = time.monotonic() - t0
+                exc_str = str(exc)
+                # A triggered guardrail tripwire is the expected outcome for out-of-scope
+                # queries (conv_06). Treat it as a pass when no tool calls are expected.
+                expected_tools = [tc["tool"] for tc in turn.get("expected_tool_calls", [])]
+                if "tripwire" in exc_str.lower() and not expected_tools:
+                    answer = f"[Guardrail blocked: {exc_str}]"
+                    tool_names = []
+                    failures = []
+                else:
+                    failures = [f"Exception: {exc}"]
+                    answer = ""
+                    tool_names = []
 
-        if failures:
-            result["passed"] = False
+            turn_result = {
+                "turn": i + 1,
+                "message": message,
+                "answer": answer,
+                "tool_names": tool_names,
+                "expected_behavior": expected_behavior,
+                "failures": failures,
+                "elapsed_s": round(elapsed, 1),
+            }
+            result["turn_results"].append(turn_result)
 
-        # Append this turn + assistant response to history for multi-turn conversations
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": answer})
+            if failures:
+                result["passed"] = False
+
+            # Append this turn + assistant response to history for multi-turn conversations
+            history.append({"role": "user", "content": message})
+            history.append({"role": "assistant", "content": answer})
 
     return result
 
@@ -194,17 +208,13 @@ def print_summary(results: list[dict]) -> None:
 
 # ── entry point ───────────────────────────────────────────────────────────────
 
-async def main(ids: list[str] | None) -> int:
-    # Load .env manually so the script works without uvicorn
-    env_file = Path(__file__).parent.parent / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                os.environ.setdefault(k.strip(), v.strip())
-
+async def main(ids: list[str] | None, console_trace: bool = False) -> int:
     conversations = json.loads(FIXTURES.read_text())
+
+    if console_trace:
+        from agents import add_trace_processor
+        from agents.tracing.processors import BatchTraceProcessor, ConsoleSpanExporter
+        add_trace_processor(BatchTraceProcessor(ConsoleSpanExporter()))
 
     if ids:
         conversations = [c for c in conversations if c["id"] in ids]
@@ -231,5 +241,6 @@ async def main(ids: list[str] | None) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run fixture conversations against live agent")
     parser.add_argument("--ids", nargs="*", help="Specific conversation IDs to run (e.g. conv_01 conv_04)")
+    parser.add_argument("--console-trace", action="store_true", help="Print span data to the terminal via ConsoleSpanExporter")
     args = parser.parse_args()
-    sys.exit(asyncio.run(main(args.ids)))
+    sys.exit(asyncio.run(main(args.ids, console_trace=args.console_trace)))

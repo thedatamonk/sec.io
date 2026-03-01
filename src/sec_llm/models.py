@@ -61,6 +61,26 @@ class IncomeStatementData(BaseModel):
     eps_diluted: float | None = None
 
     @property
+    def available_metrics(self) -> list[str]:
+        return [
+            k for k, v in {
+                "revenue": self.revenue,
+                "cost_of_revenue": self.cost_of_revenue,
+                "gross_profit": self.gross_profit,
+                "operating_income": self.operating_income,
+                "net_income": self.net_income,
+                "eps_basic": self.eps_basic,
+                "eps_diluted": self.eps_diluted,
+            }.items()
+            if v is not None
+        ]
+
+    def model_dump(self, **kwargs):
+        d = super().model_dump(**kwargs)
+        d["available_metrics"] = self.available_metrics
+        return d
+
+    @property
     def period_label(self) -> str:
         m = self.metadata
         if m.quarter:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date as _date
 from typing import Any
 
 from agents import OpenAIProvider, RunConfig, Runner
@@ -11,6 +12,16 @@ from agents import OpenAIProvider, RunConfig, Runner
 from sec_llm.agent import sec_agent
 
 logger = logging.getLogger(__name__)
+
+
+def _year_context() -> str:
+    today = _date.today()
+    yr = today.year
+    return (
+        f"Today's date is {today.isoformat()}. "
+        f'"Last year" = FY{yr - 1}. "This year" = FY{yr}. '
+        f'"Most recent" annual data = FY{yr - 1}.'
+    )
 
 
 async def run_conversation(
@@ -31,7 +42,7 @@ async def run_conversation(
     settings = get_settings()
     run_config = RunConfig(model_provider=OpenAIProvider(api_key=settings.openai_api_key))
 
-    messages = history + [{"role": "user", "content": message}]
+    messages = [{"role": "system", "content": _year_context()}] + history + [{"role": "user", "content": message}]
     result = await Runner.run(sec_agent, messages, run_config=run_config)
     answer = result.final_output or ""
     citations = _extract_citations(result)
