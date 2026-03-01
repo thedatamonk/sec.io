@@ -125,9 +125,12 @@ def _get_income_statement_df(financials: Any) -> Any:
         income = financials.income_statement
         if callable(income):
             income = income()
-        # The income statement may itself have a .to_dataframe() or .data attribute
+        # Prefer standard=True which adds a stable standard_concept column
         if hasattr(income, "to_dataframe"):
-            df = income.to_dataframe()
+            try:
+                df = income.to_dataframe(standard=True)
+            except TypeError:
+                df = income.to_dataframe()
             return df() if callable(df) else df
         if hasattr(income, "data"):
             data = income.data

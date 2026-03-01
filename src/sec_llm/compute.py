@@ -1,16 +1,49 @@
-"""Compute functions (growth, margins, aggregation) and tool registry."""
+"""Compute functions (growth, margins, aggregation)."""
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from pydantic import BaseModel
 
-from sec_llm.models import (
-    AggregationResult,
-    ComputationError,
-    GrowthResult,
-    MarginResult,
-)
+from sec_llm.models import ComputationError
 
+
+# ---------------------------------------------------------------------------
+# Result schemas (used only by compute functions)
+# ---------------------------------------------------------------------------
+
+class GrowthResult(BaseModel):
+    metric_name: str
+    current_value: float
+    previous_value: float
+    current_period: str
+    previous_period: str
+    growth_rate: float  # as decimal, e.g. 0.15 = 15%
+    growth_percentage: float  # as percentage, e.g. 15.0
+    formula: str
+
+
+class MarginResult(BaseModel):
+    metric_name: str
+    numerator: float
+    revenue: float
+    period: str
+    margin_rate: float  # as decimal
+    margin_percentage: float  # as percentage
+    formula: str
+
+
+class AggregationResult(BaseModel):
+    metric_name: str
+    values: list[float]
+    periods: list[str]
+    method: str  # "sum" or "average"
+    result: float
+    formula: str
+
+
+# ---------------------------------------------------------------------------
+# Compute functions
+# ---------------------------------------------------------------------------
 
 def compute_growth(
     metric_name: str,
@@ -20,6 +53,10 @@ def compute_growth(
     previous_period: str,
 ) -> GrowthResult:
     """Compute growth rate between two periods."""
+    if current_value is None:
+        raise ComputationError(f"Cannot compute growth for {metric_name}: {current_period} value not in filing.")
+    if previous_value is None:
+        raise ComputationError(f"Cannot compute growth for {metric_name}: {previous_period} value not in filing.")
     if previous_value == 0:
         raise ComputationError(
             f"Cannot compute growth for {metric_name}: "
@@ -45,6 +82,10 @@ def compute_margin(
     period: str,
 ) -> MarginResult:
     """Compute a margin ratio (numerator / revenue)."""
+    if numerator is None:
+        raise ComputationError(f"Cannot compute {metric_name} for {period}: metric value not in filing.")
+    if revenue is None:
+        raise ComputationError(f"Cannot compute {metric_name} for {period}: revenue not in filing.")
     if revenue == 0:
         raise ComputationError(
             f"Cannot compute margin for {metric_name}: revenue is zero ({period})"
@@ -95,17 +136,3 @@ def aggregate_quarters(
         result=round(result, 2),
         formula=formula,
     )
-
-
-# Maps tool names (used by the Planner LLM) → Python callables
-COMPUTE_REGISTRY: dict[str, Callable[..., Any]] = {
-    "compute_yoy_growth": compute_growth,
-    "compute_qoq_growth": compute_growth,
-    "compute_margin": compute_margin,
-    "aggregate_quarters": aggregate_quarters,
-}
-
-# Data-retrieval tools (async, handled separately by the executor)
-DATA_TOOLS: set[str] = {"get_income_statement"}
-
-ALL_TOOL_NAMES: set[str] = set(COMPUTE_REGISTRY.keys()) | DATA_TOOLS

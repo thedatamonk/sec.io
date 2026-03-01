@@ -1,0 +1,626 @@
+[
+  {
+    "id": "conv_01",
+    "description": "Single-turn: Direct metric retrieval (annual) — tests basic retrieval, single tool call, formatting large numbers",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Apple's revenue in fiscal year 2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": null}
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2023 annual income statement for AAPL and reports revenue formatted as ~$383.3B"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's revenue for FY2023 was approximately $383.3 billion, as reported in their 10-K filing."
+      }
+    ]
+  },
+  {
+    "id": "conv_02",
+    "description": "Single-turn: Direct metric retrieval (quarterly) — tests quarter-level granularity and correct fiscal_year + quarter mapping",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Microsoft's net income in Q2 fiscal year 2024?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "MSFT", "fiscal_year": 2024, "quarter": 2}
+          }
+        ],
+        "expected_behavior": "Agent fetches Q2 FY2024 income statement for MSFT and reports net income of ~$21.9B"
+      },
+      {
+        "role": "assistant",
+        "message": "Microsoft's net income for Q2 FY2024 was approximately $21.9 billion."
+      }
+    ]
+  },
+  {
+    "id": "conv_03",
+    "description": "Single-turn: YoY growth requiring 2 tool calls — tests multi-step reasoning where agent fetches two periods then computes growth",
+    "turns": [
+      {
+        "role": "user",
+        "message": "How much did Nvidia's revenue grow year-over-year in FY2024 vs FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "NVDA", "fiscal_year": 2024, "quarter": null}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "NVDA", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "compute_growth",
+            "args": {
+              "metric_name": "revenue",
+              "current_value": 60922000000,
+              "prior_value": 26974000000,
+              "current_period": "FY2024",
+              "prior_period": "FY2023"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches both FY2024 and FY2023 income statements for NVDA, then calls compute_growth to calculate ~126% YoY revenue growth"
+      },
+      {
+        "role": "assistant",
+        "message": "Nvidia's revenue grew approximately 126% year-over-year, from ~$26.97 billion in FY2023 to ~$60.92 billion in FY2024, driven by surging demand for AI chips."
+      }
+    ]
+  },
+  {
+    "id": "conv_04",
+    "description": "Single-turn: Margin computation — tests agent computes gross margin using gross_profit / revenue",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What is Apple's gross margin for FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "compute_margin",
+            "args": {
+              "metric_name": "gross_margin",
+              "numerator": 169148000000,
+              "revenue": 383285000000,
+              "period": "FY2023"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2023 income statement for AAPL, then calls compute_margin with gross_profit and revenue values to return ~44.1%"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's gross margin for FY2023 was approximately 44.1%, with gross profit of ~$169.1 billion on revenue of ~$383.3 billion."
+      }
+    ]
+  },
+  {
+    "id": "conv_05",
+    "description": "Single-turn: Multiple metrics in one query — tests agent fetches one filing but reports multiple metrics from it",
+    "turns": [
+      {
+        "role": "user",
+        "message": "Give me Tesla's revenue, net income, and EPS for FY2023.",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "TSLA", "fiscal_year": 2023, "quarter": null}
+          }
+        ],
+        "expected_behavior": "Agent fetches a single FY2023 income statement for TSLA and reports all three requested metrics: revenue ~$96.8B, net income ~$15.0B, diluted EPS ~$4.30"
+      },
+      {
+        "role": "assistant",
+        "message": "Tesla FY2023:\n- Revenue: ~$96.8 billion\n- Net income: ~$15.0 billion\n- EPS (diluted): ~$4.30"
+      }
+    ]
+  },
+  {
+    "id": "conv_06",
+    "description": "Single-turn: Out-of-scope query (guardrail test) — tests scope guardrail blocks balance sheet queries",
+    "turns": [
+      {
+        "role": "user",
+        "message": "Show me Apple's balance sheet for 2023.",
+        "expected_tool_calls": [],
+        "expected_behavior": "Agent detects balance sheet request and rejects it with a clear error message before making any tool calls, explaining it only supports income statement metrics"
+      },
+      {
+        "role": "assistant",
+        "message": "I'm sorry, but this agent only supports income statement metrics (revenue, net income, EPS, gross margin, operating income). Balance sheet data is not supported."
+      }
+    ]
+  },
+  {
+    "id": "conv_07",
+    "description": "Single-turn: Ambiguous period inference — tests agent uses dynamic date context to resolve 'last year' correctly (as of 2026, last year = FY2025)",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Microsoft's operating income last year?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "MSFT", "fiscal_year": 2025, "quarter": null}
+          }
+        ],
+        "expected_behavior": "Agent infers 'last year' as FY2025 from the dynamic date context (today is 2026-03-01), fetches MSFT FY2025 income statement, and reports operating income"
+      },
+      {
+        "role": "assistant",
+        "message": "Microsoft's operating income for FY2025 was approximately $X billion, as reported in their 10-K filing."
+      }
+    ]
+  },
+  {
+    "id": "conv_08",
+    "description": "Multi-turn: Follow-up deepening (same company) — tests agent carries context across turns; second turn builds on first",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Nvidia's revenue in FY2024?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "NVDA", "fiscal_year": 2024, "quarter": null}
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2024 income statement for NVDA and reports revenue of ~$60.9B"
+      },
+      {
+        "role": "assistant",
+        "message": "Nvidia's revenue for FY2024 was approximately $60.9 billion."
+      },
+      {
+        "role": "user",
+        "message": "How does that compare to the year before?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "NVDA", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "compute_growth",
+            "args": {
+              "metric_name": "revenue",
+              "current_value": 60922000000,
+              "prior_value": 26974000000,
+              "current_period": "FY2024",
+              "prior_period": "FY2023"
+            }
+          }
+        ],
+        "expected_behavior": "Agent correctly infers context (NVDA, revenue, FY2024) from the prior turn, fetches FY2023 data, calls compute_growth, and reports ~126% YoY growth"
+      },
+      {
+        "role": "assistant",
+        "message": "That's up approximately 126% from FY2023's ~$26.97 billion — driven by surging AI chip demand."
+      }
+    ]
+  },
+  {
+    "id": "conv_09",
+    "description": "Multi-turn: Company context switching — tests agent correctly switches companies mid-conversation with no data bleeding",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Apple's net income in FY2022?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2022, "quarter": null}
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2022 income statement for AAPL and reports net income of ~$99.8B"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's net income for FY2022 was approximately $99.8 billion."
+      },
+      {
+        "role": "user",
+        "message": "What about Microsoft's for the same year?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "MSFT", "fiscal_year": 2022, "quarter": null}
+          }
+        ],
+        "expected_behavior": "Agent switches to MSFT while correctly retaining the FY2022 period from context, fetches MSFT FY2022 income statement, and reports net income of ~$72.7B"
+      },
+      {
+        "role": "assistant",
+        "message": "Microsoft's net income for FY2022 was approximately $72.7 billion."
+      },
+      {
+        "role": "user",
+        "message": "Which was higher?",
+        "expected_tool_calls": [],
+        "expected_behavior": "Agent uses values already retrieved in the conversation (AAPL $99.8B vs MSFT $72.7B) without making additional tool calls, and correctly identifies Apple as higher"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's net income of ~$99.8 billion was higher than Microsoft's ~$72.7 billion in FY2022."
+      }
+    ]
+  },
+  {
+    "id": "conv_10",
+    "description": "Multi-turn: Complex multi-step analysis — tests agent handles research-style query requiring multiple fetches and computations across turns",
+    "turns": [
+      {
+        "role": "user",
+        "message": "Compare Apple and Microsoft's gross margins for FY2023. Who had the higher margin?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "MSFT", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "compute_margin",
+            "args": {
+              "metric_name": "gross_margin",
+              "numerator": 169148000000,
+              "revenue": 383285000000,
+              "period": "FY2023"
+            }
+          },
+          {
+            "tool": "compute_margin",
+            "args": {
+              "metric_name": "gross_margin",
+              "numerator": 146052000000,
+              "revenue": 211915000000,
+              "period": "FY2023"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches income statements for both AAPL and MSFT for FY2023 (possibly in parallel), then calls compute_margin for each, and correctly identifies Microsoft as having higher gross margin (~69.8% vs ~44.1%)"
+      },
+      {
+        "role": "assistant",
+        "message": "Microsoft had the higher gross margin at approximately 69.8% versus Apple's approximately 44.1% in FY2023. Microsoft's gross profit was ~$146.1 billion on revenue of ~$211.9 billion, while Apple's gross profit was ~$169.1 billion on revenue of ~$383.3 billion."
+      },
+      {
+        "role": "user",
+        "message": "How did Apple's gross margin change from FY2022 to FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2022, "quarter": null}
+          },
+          {
+            "tool": "compute_growth",
+            "args": {
+              "metric_name": "gross_margin",
+              "current_value": 0.4413,
+              "prior_value": 0.4330,
+              "current_period": "FY2023",
+              "prior_period": "FY2022"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches AAPL FY2022 income statement (FY2023 is already in context), computes gross margin for FY2022, then calls compute_growth to compare the two margins, reporting ~0.8 percentage point improvement"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's gross margin improved slightly from approximately 43.3% in FY2022 to approximately 44.1% in FY2023, a ~0.8 percentage point increase."
+      }
+    ]
+  },
+  {
+    "id": "conv_11",
+    "description": "Single-turn: Net margin (newly unlocked derivable metric) — tests agent computes net_income / revenue via compute_margin with metric_name='net_margin'",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Tesla's net profit margin for FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "TSLA", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "compute_margin",
+            "args": {
+              "metric_name": "net_margin",
+              "numerator": 14997000000,
+              "revenue": 96773000000,
+              "period": "FY2023"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2023 income statement for TSLA, extracts net_income (~$15.0B) and revenue (~$96.8B), calls compute_margin with metric_name='net_margin', and reports ~15.5% net margin"
+      },
+      {
+        "role": "assistant",
+        "message": "Tesla's net profit margin for FY2023 was approximately 15.5%, with net income of ~$15.0 billion on revenue of ~$96.8 billion, per their 10-K filing."
+      }
+    ]
+  },
+  {
+    "id": "conv_12",
+    "description": "Single-turn: Cost ratio (newly unlocked derivable metric) — tests agent computes cost_of_revenue / revenue via compute_margin with metric_name='cost_ratio'",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What is Apple's cost ratio for FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "compute_margin",
+            "args": {
+              "metric_name": "cost_ratio",
+              "numerator": 214137000000,
+              "revenue": 383285000000,
+              "period": "FY2023"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2023 income statement for AAPL, extracts cost_of_revenue (~$214.1B) and revenue (~$383.3B), calls compute_margin with metric_name='cost_ratio', and reports ~55.9%"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's cost ratio for FY2023 was approximately 55.9%, meaning cost of revenue (~$214.1 billion) represented about 55.9% of total revenue (~$383.3 billion), per their 10-K filing."
+      }
+    ]
+  },
+  {
+    "id": "conv_13",
+    "description": "Single-turn: TTM revenue via aggregate_quarters — tests agent fetches all 4 quarters and calls aggregate_quarters(method='sum') to compute full-year TTM total",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Apple's trailing twelve months revenue as of Q4 FY2024?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2024, "quarter": 1}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2024, "quarter": 2}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2024, "quarter": 3}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2024, "quarter": 4}
+          },
+          {
+            "tool": "aggregate_quarters",
+            "args": {
+              "metric_name": "revenue",
+              "quarter_data": [
+                {"period": "Q1 FY2024", "value": 119575000000},
+                {"period": "Q2 FY2024", "value": 90753000000},
+                {"period": "Q3 FY2024", "value": 85777000000},
+                {"period": "Q4 FY2024", "value": 94930000000}
+              ],
+              "method": "sum"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches all 4 quarters of AAPL FY2024 (possibly in parallel), then calls aggregate_quarters with method='sum' to produce TTM revenue of ~$391.0B"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's trailing twelve months revenue as of Q4 FY2024 was approximately $391.0 billion, summing Q1 ($119.6B) + Q2 ($90.8B) + Q3 ($85.8B) + Q4 ($94.9B) across the four quarters of FY2024."
+      }
+    ]
+  },
+  {
+    "id": "conv_14",
+    "description": "Single-turn: Average quarterly revenue via aggregate_quarters — tests agent fetches 4 quarters and calls aggregate_quarters(method='average')",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Apple's average quarterly revenue in FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": 1}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": 2}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": 3}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": 4}
+          },
+          {
+            "tool": "aggregate_quarters",
+            "args": {
+              "metric_name": "revenue",
+              "quarter_data": [
+                {"period": "Q1 FY2023", "value": 117154000000},
+                {"period": "Q2 FY2023", "value": 94836000000},
+                {"period": "Q3 FY2023", "value": 81797000000},
+                {"period": "Q4 FY2023", "value": 89498000000}
+              ],
+              "method": "average"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches all 4 quarters of AAPL FY2023, calls aggregate_quarters with method='average', and reports average quarterly revenue of ~$95.8B (383,285,000,000 / 4)"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's average quarterly revenue in FY2023 was approximately $95.8 billion, averaging Q1 ($117.2B), Q2 ($94.8B), Q3 ($81.8B), and Q4 ($89.5B) across the four quarters."
+      }
+    ]
+  },
+  {
+    "id": "conv_15",
+    "description": "Single-turn: Graceful degradation — P/E ratio query is partially out of scope but agent should provide EPS and offer to compute P/E if user supplies stock price",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What's Apple's P/E ratio for FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": null}
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2023 income statement for AAPL, reports EPS (diluted ~$6.13), explains that stock price is outside data scope, and offers to compute P/E if user provides the stock price"
+      },
+      {
+        "role": "assistant",
+        "message": "I can provide the EPS component needed for P/E. Apple's diluted EPS for FY2023 was approximately $6.13, per their 10-K filing. However, computing the P/E ratio requires a stock price, which is outside my data scope (I only have income statement data). If you provide the stock price, I can compute the P/E ratio for you."
+      }
+    ]
+  },
+  {
+    "id": "conv_16",
+    "description": "Multi-turn: Net margin trend — tests agent computes net margin for two years in sequence and reports the change",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Apple's net margin for FY2022?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2022, "quarter": null}
+          },
+          {
+            "tool": "compute_margin",
+            "args": {
+              "metric_name": "net_margin",
+              "period": "FY2022"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2022 income statement for AAPL, calls compute_margin with net_income and revenue for FY2022, and reports net margin of ~25.3%"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's net margin for FY2022 was approximately 25.3%, with net income of ~$99.8 billion on revenue of ~$394.3 billion, per their 10-K filing."
+      },
+      {
+        "role": "user",
+        "message": "How did that change in FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "compute_margin",
+            "args": {
+              "metric_name": "net_margin",
+              "period": "FY2023"
+            }
+          }
+        ],
+        "expected_behavior": "Agent fetches FY2023 income statement for AAPL (FY2022 already in context), calls compute_margin with net_income and revenue for FY2023, and compares ~25.3% (FY2022) vs ~25.3% (FY2023) — near flat"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's net margin was approximately 25.3% in FY2023 (net income ~$97.0B on revenue ~$383.3B), essentially flat versus FY2022's ~25.3%."
+      }
+    ]
+  },
+  {
+    "id": "conv_17",
+    "description": "Single-turn: 'Return on sales' synonym — tests guardrail does not block this phrase and agent correctly resolves it to net margin",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Tesla's return on sales for FY2023?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "TSLA", "fiscal_year": 2023, "quarter": null}
+          },
+          {
+            "tool": "compute_margin",
+            "args": {
+              "metric_name": "net_margin",
+              "numerator": 14997000000,
+              "revenue": 96773000000,
+              "period": "FY2023"
+            }
+          }
+        ],
+        "expected_behavior": "Agent correctly interprets 'return on sales' as net margin (not blocked by guardrail), fetches TSLA FY2023 income statement, calls compute_margin with metric_name='net_margin', and reports ~15.5%"
+      },
+      {
+        "role": "assistant",
+        "message": "Tesla's return on sales (net margin) for FY2023 was approximately 15.5%, with net income of ~$15.0 billion on revenue of ~$96.8 billion, per their 10-K filing."
+      }
+    ]
+  },
+  {
+    "id": "conv_18",
+    "description": "Single-turn: TTM revenue via aggregate_quarters (mid-year window) — tests agent constructs a TTM window spanning two fiscal years",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Apple's trailing twelve months revenue as of Q3 FY2024?",
+        "expected_tool_calls": [
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2023, "quarter": 4}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2024, "quarter": 1}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2024, "quarter": 2}
+          },
+          {
+            "tool": "get_income_statement",
+            "args": {"ticker": "AAPL", "fiscal_year": 2024, "quarter": 3}
+          },
+          {
+            "tool": "aggregate_quarters",
+            "args": {
+              "metric_name": "revenue",
+              "quarter_data": [
+                {"period": "Q4 FY2023", "value": 89498000000},
+                {"period": "Q1 FY2024", "value": 119575000000},
+                {"period": "Q2 FY2024", "value": 90753000000},
+                {"period": "Q3 FY2024", "value": 85777000000}
+              ],
+              "method": "sum"
+            }
+          }
+        ],
+        "expected_behavior": "Agent correctly constructs a cross-fiscal-year TTM window (Q4 FY2023 + Q1–Q3 FY2024), fetches all 4 quarters, calls aggregate_quarters with method='sum', and reports TTM revenue of ~$385.6B"
+      },
+      {
+        "role": "assistant",
+        "message": "Apple's trailing twelve months revenue as of Q3 FY2024 was approximately $385.6 billion, summing Q4 FY2023 ($89.5B) + Q1 FY2024 ($119.6B) + Q2 FY2024 ($90.8B) + Q3 FY2024 ($85.8B)."
+      }
+    ]
+  }
+]

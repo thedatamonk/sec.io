@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     "httpx>=0.28.0",
     "openai>=1.60.0",
+    "openai-agents>=0.0.3",
     "edgartools>=3.0.0",
 ]
 

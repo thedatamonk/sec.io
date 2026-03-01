@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
+from agents import InputGuardrailTripwireTriggered
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
-from sec_llm.dependencies import get_pipeline, get_settings
-from sec_llm.guardrails import check_scope, sanitize_input
-from sec_llm.models import (
-    AnalysisResponse,
-    CompanyNotFoundError,
-    ComputationError,
-    FilingNotFoundError,
-    LLMError,
-    MetricNotAvailableError,
-    UserQuery,
-)
+from sec_llm.dependencies import get_settings
+from sec_llm.guardrails import sanitize_input
+from sec_llm.models import CompanyNotFoundError, ComputationError, FilingNotFoundError
+from sec_llm.runner import run_conversation
 
 router = APIRouter()
 
@@ -35,32 +31,36 @@ def _check_rate_limit(ip: str, max_per_minute: int) -> None:
     _rate_state[ip] = hits
 
 
-@router.post("/api/chat", response_model=AnalysisResponse)
-async def chat(query: UserQuery, request: Request) -> AnalysisResponse:
+class ChatRequest(BaseModel):
+    message: str
+    conversation_history: list[dict[str, Any]] = []
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    citations: list[dict[str, Any]] = []
+
+
+@router.post("/api/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest, req: Request) -> ChatResponse:
     """Process a natural language financial query."""
     settings = get_settings()
 
     # Rate limiting
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = req.client.host if req.client else "unknown"
     _check_rate_limit(client_ip, settings.rate_limit_per_minute)
 
-    # Sanitize and scope-check
-    sanitized = sanitize_input(query.message)
-    scope_error = check_scope(sanitized)
-    if scope_error:
-        raise HTTPException(status_code=422, detail=scope_error)
-
-    pipeline = get_pipeline()
+    sanitized = sanitize_input(request.message)
 
     try:
-        return await pipeline.process(query)
+        answer, citations = await run_conversation(sanitized, request.conversation_history)
+        return ChatResponse(answer=answer, citations=citations)
+    except InputGuardrailTripwireTriggered as exc:
+        detail = str(exc.guardrail_result.output.output_info) if exc.guardrail_result else str(exc)
+        raise HTTPException(status_code=422, detail=detail)
     except CompanyNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except FilingNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    except MetricNotAvailableError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
     except ComputationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))

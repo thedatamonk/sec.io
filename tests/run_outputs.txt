@@ -1,0 +1,267 @@
+Running 18 conversation(s) …
+
+  → conv_01: Single-turn: Direct metric retrieval (annual) — tests basic retrieval,…
+  → conv_02: Single-turn: Direct metric retrieval (quarterly) — tests quarter-level…
+Subheader 'COMPANY DATA' not found in header ']         IRS NUMBER'
+Subheader 'COMPANY DATA' not found in header ']         IRS NUMBER'
+  → conv_03: Single-turn: YoY growth requiring 2 tool calls — tests multi-step reas…
+  → conv_04: Single-turn: Margin computation — tests agent computes gross margin us…
+  → conv_05: Single-turn: Multiple metrics in one query — tests agent fetches one f…
+  → conv_06: Single-turn: Out-of-scope query (guardrail test) — tests scope guardra…
+  → conv_07: Single-turn: Ambiguous period inference — tests agent uses dynamic dat…
+  → conv_08: Multi-turn: Follow-up deepening (same company) — tests agent carries c…
+  → conv_09: Multi-turn: Company context switching — tests agent correctly switches…
+  → conv_10: Multi-turn: Complex multi-step analysis — tests agent handles research…
+  → conv_11: Single-turn: Net margin (newly unlocked derivable metric) — tests agen…
+  → conv_12: Single-turn: Cost ratio (newly unlocked derivable metric) — tests agen…
+  → conv_13: Single-turn: TTM revenue via aggregate_quarters — tests agent fetches …
+  → conv_14: Single-turn: Average quarterly revenue via aggregate_quarters — tests …
+  → conv_15: Single-turn: Graceful degradation — P/E ratio query is partially out o…
+  → conv_16: Multi-turn: Net margin trend — tests agent computes net margin for two…
+  → conv_17: Single-turn: 'Return on sales' synonym — tests guardrail does not bloc…
+  → conv_18: Single-turn: TTM revenue via aggregate_quarters (mid-year window) — te…
+
+════════════════════════════════════════════════════════════
+
+[conv_01] Single-turn: Direct metric retrieval (annual) — tests basic retrieval, single tool call, formatting large numbers
+  Status: ✓ PASS
+
+  Turn 1 (4.5s)
+    User:  What was Apple's revenue in fiscal year 2023?
+    Tools: ['get_income_statement']
+    Answer: Apple's revenue for fiscal year 2023 was approximately $391.0 billion, as
+           reported in their 10-K filing.
+    Expected: Agent fetches FY2023 annual income statement for AAPL and reports revenue formatted as ~$383.3B
+
+[conv_02] Single-turn: Direct metric retrieval (quarterly) — tests quarter-level granularity and correct fiscal_year + quarter mapping
+  Status: ✓ PASS
+
+  Turn 1 (7.8s)
+    User:  What was Microsoft's net income in Q2 fiscal year 2024?
+    Tools: ['get_income_statement']
+    Answer: It seems there's no 10-Q filing available for Microsoft's Q2 fiscal year 2024.
+           Could there be another metric or period you're interested in?
+    Expected: Agent fetches Q2 FY2024 income statement for MSFT and reports net income of ~$21.9B
+
+[conv_03] Single-turn: YoY growth requiring 2 tool calls — tests multi-step reasoning where agent fetches two periods then computes growth
+  Status: ✓ PASS
+
+  Turn 1 (6.5s)
+    User:  How much did Nvidia's revenue grow year-over-year in FY2024 vs FY2023?
+    Tools: ['get_income_statement', 'get_income_statement', 'compute_growth']
+    Answer: NVIDIA's revenue grew by 114.2% year-over-year, from approximately $60.92
+           billion in FY2023 to around $130.50 billion in FY2024.
+    Expected: Agent fetches both FY2024 and FY2023 income statements for NVDA, then calls compute_growth to calculate ~126% YoY revenue growth
+
+[conv_04] Single-turn: Margin computation — tests agent computes gross margin using gross_profit / revenue
+  Status: ✓ PASS
+
+  Turn 1 (4.1s)
+    User:  What is Apple's gross margin for FY2023?
+    Tools: ['get_income_statement', 'compute_margin']
+    Answer: Apple's gross margin for FY2023 was 46.2%, based on a revenue of $391.0
+           billion and a gross profit of $180.7 billion, as reported in their 10-K filing.
+    Expected: Agent fetches FY2023 income statement for AAPL, then calls compute_margin with gross_profit and revenue values to return ~44.1%
+
+[conv_05] Single-turn: Multiple metrics in one query — tests agent fetches one filing but reports multiple metrics from it
+  Status: ✓ PASS
+
+  Turn 1 (4.2s)
+    User:  Give me Tesla's revenue, net income, and EPS for FY2023.
+    Tools: ['get_income_statement']
+    Answer: For FY2023, as reported in Tesla's 10-K filing:  - **Revenue**: $96.77 billion
+           - **Net Income**: $14.97 billion - **EPS (Basic)**: $4.73 - **EPS (Diluted)**:
+           $4.30
+    Expected: Agent fetches a single FY2023 income statement for TSLA and reports all three requested metrics: revenue ~$96.8B, net income ~$15.0B, diluted EPS ~$4.30
+
+[conv_06] Single-turn: Out-of-scope query (guardrail test) — tests scope guardrail blocks balance sheet queries
+  Status: ✓ PASS
+
+  Turn 1 (0.0s)
+    User:  Show me Apple's balance sheet for 2023.
+    Tools: ['(none)']
+    Answer: [Guardrail blocked: Guardrail InputGuardrail triggered tripwire]
+    Expected: Agent detects balance sheet request and rejects it with a clear error message before making any tool calls, explaining it only supports income statement metrics
+
+[conv_07] Single-turn: Ambiguous period inference — tests agent uses dynamic date context to resolve 'last year' correctly (as of 2026, last year = FY2025)
+  Status: ✓ PASS
+
+  Turn 1 (4.7s)
+    User:  What was Microsoft's operating income last year?
+    Tools: ['get_income_statement']
+    Answer: Microsoft's operating income for FY2022 was approximately $88.5 billion,
+           according to their 10-K filing.
+    Expected: Agent infers 'last year' as FY2025 from the dynamic date context (today is 2026-03-01), fetches MSFT FY2025 income statement, and reports operating income
+
+[conv_08] Multi-turn: Follow-up deepening (same company) — tests agent carries context across turns; second turn builds on first
+  Status: ✓ PASS
+
+  Turn 1 (11.5s)
+    User:  What was Nvidia's revenue in FY2024?
+    Tools: ['get_income_statement']
+    Answer: NVIDIA's revenue for FY2024 was approximately $130.5 billion, according to
+           their 10-K filing.
+    Expected: Agent fetches FY2024 income statement for NVDA and reports revenue of ~$60.9B
+
+  Turn 2 (24.2s)
+    User:  How does that compare to the year before?
+    Tools: ['get_income_statement', 'compute_growth']
+    Answer: NVIDIA's revenue grew by 114.2% from FY2023 to FY2024. It increased from
+           approximately $60.92 billion in FY2023 to $130.5 billion in FY2024, according
+           to their 10-K filings.
+    Expected: Agent correctly infers context (NVDA, revenue, FY2024) from the prior turn, fetches FY2023 data, calls compute_growth, and reports ~126% YoY growth
+
+[conv_09] Multi-turn: Company context switching — tests agent correctly switches companies mid-conversation with no data bleeding
+  Status: ✓ PASS
+
+  Turn 1 (6.0s)
+    User:  What was Apple's net income in FY2022?
+    Tools: ['get_income_statement']
+    Answer: Apple's net income for FY2022 was approximately $96.99 billion, as reported in
+           their 10-K filing.
+    Expected: Agent fetches FY2022 income statement for AAPL and reports net income of ~$99.8B
+
+  Turn 2 (13.6s)
+    User:  What about Microsoft's for the same year?
+    Tools: ['get_income_statement']
+    Answer: Microsoft's net income for FY2022 was approximately $72.36 billion, as
+           reported in their 10-K filing.
+    Expected: Agent switches to MSFT while correctly retaining the FY2022 period from context, fetches MSFT FY2022 income statement, and reports net income of ~$72.7B
+
+  Turn 3 (1.3s)
+    User:  Which was higher?
+    Tools: ['(none)']
+    Answer: Apple's net income of approximately $96.99 billion in FY2022 was higher than
+           Microsoft's, which was approximately $72.36 billion.
+    Expected: Agent uses values already retrieved in the conversation (AAPL $99.8B vs MSFT $72.7B) without making additional tool calls, and correctly identifies Apple as higher
+
+[conv_10] Multi-turn: Complex multi-step analysis — tests agent handles research-style query requiring multiple fetches and computations across turns
+  Status: ✗ FAIL
+
+  Turn 1 (22.0s)
+    User:  Compare Apple and Microsoft's gross margins for FY2023. Who had the higher margin?
+    Tools: ['get_income_statement', 'get_income_statement', 'compute_margin', 'compute_margin']
+    Answer: In FY2023, Microsoft had a gross margin of **69.8%**, while Apple had a gross
+           margin of **46.2%**. Therefore, Microsoft had the higher gross margin.
+    Expected: Agent fetches income statements for both AAPL and MSFT for FY2023 (possibly in parallel), then calls compute_margin for each, and correctly identifies Microsoft as having higher gross margin (~69.8% vs ~44.1%)
+
+  Turn 2 (21.0s)
+    User:  How did Apple's gross margin change from FY2022 to FY2023?
+    Tools: ['get_income_statement', 'get_income_statement', 'compute_margin', 'compute_margin']
+    Answer: Apple's gross margin improved from **44.1%** in FY2022 to **46.2%** in FY2023.
+    Expected: Agent fetches AAPL FY2022 income statement (FY2023 is already in context), computes gross margin for FY2022, then calls compute_growth to compare the two margins, reporting ~0.8 percentage point improvement
+    ✗ Expected tool 'compute_growth' not called (got: ['get_income_statement', 'get_income_statement', 'compute_margin', 'compute_margin'])
+
+[conv_11] Single-turn: Net margin (newly unlocked derivable metric) — tests agent computes net_income / revenue via compute_margin with metric_name='net_margin'
+  Status: ✓ PASS
+
+  Turn 1 (20.3s)
+    User:  What was Tesla's net profit margin for FY2023?
+    Tools: ['get_income_statement', 'compute_margin']
+    Answer: Tesla's net profit margin for FY2023 was 15.5%.
+    Expected: Agent fetches FY2023 income statement for TSLA, extracts net_income (~$15.0B) and revenue (~$96.8B), calls compute_margin with metric_name='net_margin', and reports ~15.5% net margin
+
+[conv_12] Single-turn: Cost ratio (newly unlocked derivable metric) — tests agent computes cost_of_revenue / revenue via compute_margin with metric_name='cost_ratio'
+  Status: ✓ PASS
+
+  Turn 1 (19.2s)
+    User:  What is Apple's cost ratio for FY2023?
+    Tools: ['get_income_statement', 'compute_margin']
+    Answer: Apple's cost ratio for FY2023 was 53.8%, as reported in the 10-K filing. This
+           means that 53.8% of the company's revenue of approximately $391.0 billion went
+           toward the cost of goods sold.
+    Expected: Agent fetches FY2023 income statement for AAPL, extracts cost_of_revenue (~$214.1B) and revenue (~$383.3B), calls compute_margin with metric_name='cost_ratio', and reports ~55.9%
+
+[conv_13] Single-turn: TTM revenue via aggregate_quarters — tests agent fetches all 4 quarters and calls aggregate_quarters(method='sum') to compute full-year TTM total
+  Status: ✗ FAIL
+
+  Turn 1 (15.5s)
+    User:  What was Apple's trailing twelve months revenue as of Q4 FY2024?
+    Tools: ['get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement']
+    Answer: I encountered a technical issue while trying to retrieve the data for Apple's
+           trailing twelve months revenue as of Q4 FY2024. Please try again later.
+    Expected: Agent fetches all 4 quarters of AAPL FY2024 (possibly in parallel), then calls aggregate_quarters with method='sum' to produce TTM revenue of ~$391.0B
+    ✗ Expected tool 'aggregate_quarters' not called (got: ['get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement'])
+
+[conv_14] Single-turn: Average quarterly revenue via aggregate_quarters — tests agent fetches 4 quarters and calls aggregate_quarters(method='average')
+  Status: ✗ FAIL
+
+  Turn 1 (13.1s)
+    User:  What was Apple's average quarterly revenue in FY2023?
+    Tools: ['get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement']
+    Answer: It seems there was a technical issue fetching Apple's quarterly revenue data
+           for FY2023. Please try again later, or if there's anything else you need, let
+           me know!
+    Expected: Agent fetches all 4 quarters of AAPL FY2023, calls aggregate_quarters with method='average', and reports average quarterly revenue of ~$95.8B (383,285,000,000 / 4)
+    ✗ Expected tool 'aggregate_quarters' not called (got: ['get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement'])
+
+[conv_15] Single-turn: Graceful degradation — P/E ratio query is partially out of scope but agent should provide EPS and offer to compute P/E if user supplies stock price
+  Status: ✓ PASS
+
+  Turn 1 (8.4s)
+    User:  What's Apple's P/E ratio for FY2023?
+    Tools: ['get_income_statement']
+    Answer: For FY2023, Apple's diluted EPS (earnings per share) was $6.08. To determine
+           the P/E ratio, you'll need the current stock price. If you have that, you can
+           divide the stock price by the EPS to get the P/E ratio.
+    Expected: Agent fetches FY2023 income statement for AAPL, reports EPS (diluted ~$6.13), explains that stock price is outside data scope, and offers to compute P/E if user provides the stock price
+
+[conv_16] Multi-turn: Net margin trend — tests agent computes net margin for two years in sequence and reports the change
+  Status: ✓ PASS
+
+  Turn 1 (20.4s)
+    User:  What was Apple's net margin for FY2022?
+    Tools: ['get_income_statement', 'compute_margin']
+    Answer: Apple's net margin for FY2022 was 25.3%, based on a net income of
+           approximately $97.0 billion and revenue of $383.3 billion reported in the 10-K
+           filing.
+    Expected: Agent fetches FY2022 income statement for AAPL, calls compute_margin with net_income and revenue for FY2022, and reports net margin of ~25.3%
+
+  Turn 2 (23.2s)
+    User:  How did that change in FY2023?
+    Tools: ['get_income_statement', 'get_income_statement', 'compute_margin', 'compute_margin', 'compute_growth']
+    Answer: Apple's net margin decreased from 25.3% in FY2022 to 24.0% in FY2023,
+           reflecting a decrease of 5.3%.
+    Expected: Agent fetches FY2023 income statement for AAPL (FY2022 already in context), calls compute_margin with net_income and revenue for FY2023, and compares ~25.3% (FY2022) vs ~25.3% (FY2023) — near flat
+
+[conv_17] Single-turn: 'Return on sales' synonym — tests guardrail does not block this phrase and agent correctly resolves it to net margin
+  Status: ✓ PASS
+
+  Turn 1 (19.0s)
+    User:  What was Tesla's return on sales for FY2023?
+    Tools: ['get_income_statement', 'compute_margin']
+    Answer: Tesla's return on sales (net profit margin) for FY2023 was 15.5%. This means
+           that Tesla earned a net income of approximately $14.97 billion on $96.77
+           billion in revenue during that fiscal year.
+    Expected: Agent correctly interprets 'return on sales' as net margin (not blocked by guardrail), fetches TSLA FY2023 income statement, calls compute_margin with metric_name='net_margin', and reports ~15.5%
+
+[conv_18] Single-turn: TTM revenue via aggregate_quarters (mid-year window) — tests agent constructs a TTM window spanning two fiscal years
+  Status: ✗ FAIL
+
+  Turn 1 (28.9s)
+    User:  What was Apple's trailing twelve months revenue as of Q3 FY2024?
+    Tools: ['get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement']
+    Answer: I encountered repeated issues accessing the data needed for the calculation.
+           Please try again later. If you have any other questions, feel free to ask!
+    Expected: Agent correctly constructs a cross-fiscal-year TTM window (Q4 FY2023 + Q1–Q3 FY2024), fetches all 4 quarters, calls aggregate_quarters with method='sum', and reports TTM revenue of ~$385.6B
+    ✗ Expected tool 'aggregate_quarters' not called (got: ['get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement', 'get_income_statement'])
+
+═══ Summary: 14/18 conversations passed ═══
+  ✓ conv_01
+  ✓ conv_02
+  ✓ conv_03
+  ✓ conv_04
+  ✓ conv_05
+  ✓ conv_06
+  ✓ conv_07
+  ✓ conv_08
+  ✓ conv_09
+  ✗ conv_10
+  ✓ conv_11
+  ✓ conv_12
+  ✗ conv_13
+  ✗ conv_14
+  ✓ conv_15
+  ✓ conv_16
+  ✓ conv_17
+  ✗ conv_18

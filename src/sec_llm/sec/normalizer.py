@@ -21,6 +21,10 @@ LABEL_CANDIDATES: dict[str, list[str]] = {
         "Total Net Sales",
         "Sales",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
+        # XBRL concept IDs
+        "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
+        "us-gaap_Revenues",
+        "us-gaap_SalesRevenueNet",
     ],
     "cost_of_revenue": [
         "Cost of Revenue",
@@ -30,17 +34,25 @@ LABEL_CANDIDATES: dict[str, list[str]] = {
         "Total Cost of Revenue",
         "CostOfGoodsAndServicesSold",
         "CostOfRevenue",
+        # XBRL concept IDs
+        "us-gaap_CostOfRevenue",
+        "us-gaap_CostOfGoodsAndServicesSold",
+        "us-gaap_CostOfGoodsSold",
     ],
     "gross_profit": [
         "Gross Profit",
         "Gross Margin",
         "GrossProfit",
+        # XBRL concept IDs
+        "us-gaap_GrossProfit",
     ],
     "operating_income": [
         "Operating Income",
         "Operating Income (Loss)",
         "Income from Operations",
         "OperatingIncomeLoss",
+        # XBRL concept IDs
+        "us-gaap_OperatingIncomeLoss",
     ],
     "net_income": [
         "Net Income",
@@ -48,18 +60,32 @@ LABEL_CANDIDATES: dict[str, list[str]] = {
         "Net Income Attributable",
         "NetIncomeLoss",
         "Net income",
+        # XBRL concept IDs
+        "us-gaap_NetIncomeLoss",
     ],
     "eps_basic": [
         "Basic EPS",
         "Earnings Per Share, Basic",
         "Basic Earnings Per Share",
         "EarningsPerShareBasic",
+        # XBRL concept IDs
+        "us-gaap_EarningsPerShareBasic",
+        # edgartools label variants (in dollars per share)
+        "Basic (in dollars per share)",
+        "Basic earnings per share",
+        "Net income per share, basic",
     ],
     "eps_diluted": [
         "Diluted EPS",
         "Earnings Per Share, Diluted",
         "Diluted Earnings Per Share",
         "EarningsPerShareDiluted",
+        # XBRL concept IDs
+        "us-gaap_EarningsPerShareDiluted",
+        # edgartools label variants
+        "Diluted (in dollars per share)",
+        "Diluted earnings per share",
+        "Net income per share, diluted",
     ],
 }
 
@@ -83,6 +109,8 @@ def find_row_value(
     # Try multiple label sources for better matching across edgartools versions
     label_columns: list[pd.Series] = []
 
+    if "standard_concept" in df.columns:
+        label_columns.append(df["standard_concept"])
     if "concept" in df.columns:
         label_columns.append(df["concept"])
     if "label" in df.columns:
@@ -93,16 +121,24 @@ def find_row_value(
         # Use first column as labels
         label_columns.append(df.iloc[:, 0])
 
-    # Determine value column: skip known non-value columns
-    _NON_VALUE_COLS = {"label", "concept", "level", "abstract", "units"}
+    # Determine value column: prefer date-shaped columns (e.g. "2023-09-30"),
+    # then fall back to any column not in the known metadata exclusion set.
+    _NON_VALUE_COLS = {
+        "label", "concept", "standard_concept", "level", "abstract", "units",
+        "dimension", "is_breakdown", "dimension_axis", "dimension_member",
+        "dimension_member_label", "dimension_label", "balance", "weight",
+        "preferred_sign", "parent_concept", "parent_abstract_concept",
+    }
     if value_column is not None and value_column in df.columns:
         val_col = value_column
     else:
-        numeric_cols = [
-            c for c in df.columns
-            if c.lower() not in _NON_VALUE_COLS
-        ]
-        val_col = numeric_cols[-1] if numeric_cols else (df.columns[-1] if len(df.columns) >= 1 else None)
+        # Prefer columns that look like dates (YYYY-MM-DD)
+        date_cols = [c for c in df.columns if re.match(r"^\d{4}-\d{2}-\d{2}$", str(c))]
+        if date_cols:
+            val_col = date_cols[0]  # first date column = the filing's reporting period
+        else:
+            numeric_cols = [c for c in df.columns if c.lower() not in _NON_VALUE_COLS]
+            val_col = numeric_cols[-1] if numeric_cols else (df.columns[-1] if len(df.columns) >= 1 else None)
     if val_col is None:
         return None
 
