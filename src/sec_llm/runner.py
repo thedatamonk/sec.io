@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date as _date
 from typing import Any
@@ -10,6 +9,7 @@ from typing import Any
 from agents import OpenAIProvider, RunConfig, Runner
 
 from sec_llm.agent import sec_agent
+from sec_llm.agents.scratchpad import BossResponse, SingleAgentResponse
 
 logger = logging.getLogger(__name__)
 
@@ -44,53 +44,36 @@ async def run_conversation(
 
     messages = [{"role": "system", "content": _year_context()}] + history + [{"role": "user", "content": message}]
     result = await Runner.run(sec_agent, messages, run_config=run_config)
-    answer = result.final_output or ""
-    citations = _extract_citations(result)
+    single_response: SingleAgentResponse = result.final_output
+    answer = single_response.final_answer
+    citations = [c.model_dump() for c in single_response.citations]
     return answer, citations
 
 
-def _extract_citations(result: Any) -> list[dict[str, Any]]:
-    """Extract source citations from get_income_statement tool call results."""
-    citations: list[dict[str, Any]] = []
+async def run_multi_agent_conversation(
+    message: str,
+    history: list[dict[str, str]],
+) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    """Run one turn using the multi-agent Boss-Worker system.
 
-    for item in result.new_items:
-        if getattr(item, "type", None) != "tool_call_output_item":
-            continue
+    Args:
+        message: The sanitized user message for this turn.
+        history: Prior conversation turns as [{role, content}, ...] dicts.
 
-        content = getattr(item, "output", None)
-        if not content:
-            continue
+    Returns:
+        (answer, citations, scratchpad) where scratchpad is a dict from the
+        Boss agent's structured BossResponse output.
+    """
+    from sec_llm.agents.boss import boss_agent
+    from sec_llm.dependencies import get_settings
 
-        # Content may be a string (JSON) or already a dict
-        data: dict[str, Any] | None = None
-        if isinstance(content, str):
-            try:
-                data = json.loads(content)
-            except (json.JSONDecodeError, ValueError):
-                continue
-        elif isinstance(content, dict):
-            data = content
+    settings = get_settings()
+    run_config = RunConfig(model_provider=OpenAIProvider(api_key=settings.openai_api_key))
 
-        if data is None:
-            continue
-
-        metadata = data.get("metadata")
-        if not metadata:
-            continue
-
-        citations.append({
-            "ticker": metadata.get("ticker", ""),
-            "filing_type": metadata.get("filing_type", ""),
-            "fiscal_period": _fiscal_period_label(metadata),
-            "filing_date": str(metadata.get("filing_date") or ""),
-        })
-
-    return citations
-
-
-def _fiscal_period_label(metadata: dict[str, Any]) -> str:
-    quarter = metadata.get("quarter")
-    fiscal_year = metadata.get("fiscal_year", "")
-    if quarter:
-        return f"Q{quarter} FY{fiscal_year}"
-    return f"FY{fiscal_year}"
+    messages = [{"role": "system", "content": _year_context()}] + history + [{"role": "user", "content": message}]
+    result = await Runner.run(boss_agent, messages, run_config=run_config)
+    boss_response: BossResponse = result.final_output
+    answer = boss_response.final_answer
+    citations = [c.model_dump() for c in boss_response.citations]
+    scratchpad = boss_response.scratchpad.model_dump()
+    return answer, citations, scratchpad

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     edgar_identity: str = "SEC-LLM POC dev@example.com"
 
     agent_model: str = "gpt-4o"
+    boss_model: str = "gpt-4o"  # set SEC_LLM_BOSS_MODEL=o1 for heavier reasoning
 
     cors_origins: list[str] = ["http://localhost:3000"]
     sec_cache_ttl_seconds: int = 900  # 15 minutes

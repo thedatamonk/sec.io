@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from agents import InputGuardrailTripwireTriggered
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from sec_llm.dependencies import get_settings
@@ -39,10 +39,15 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     citations: list[dict[str, Any]] = []
+    scratchpad: dict[str, Any] = {}
 
 
 @router.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, req: Request) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    req: Request,
+    mode: str = Query(default="single", description="Agent mode: 'single' or 'multi'"),
+) -> ChatResponse:
     """Process a natural language financial query."""
     settings = get_settings()
 
@@ -53,8 +58,15 @@ async def chat(request: ChatRequest, req: Request) -> ChatResponse:
     sanitized = sanitize_input(request.message)
 
     try:
-        answer, citations = await run_conversation(sanitized, request.conversation_history)
-        return ChatResponse(answer=answer, citations=citations)
+        if mode == "multi":
+            from sec_llm.runner import run_multi_agent_conversation
+            answer, citations, scratchpad = await run_multi_agent_conversation(
+                sanitized, request.conversation_history
+            )
+            return ChatResponse(answer=answer, citations=citations, scratchpad=scratchpad)
+        else:
+            answer, citations = await run_conversation(sanitized, request.conversation_history)
+            return ChatResponse(answer=answer, citations=citations)
     except InputGuardrailTripwireTriggered as exc:
         detail = str(exc.guardrail_result.output.output_info) if exc.guardrail_result else str(exc)
         raise HTTPException(status_code=422, detail=detail)
