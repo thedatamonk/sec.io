@@ -7,8 +7,9 @@ from typing import Any
 
 from typing_extensions import TypedDict
 
-from agents import Agent, GuardrailFunctionOutput, RunContextWrapper, function_tool, input_guardrail
+from agents import Agent, AgentOutputSchema, GuardrailFunctionOutput, RunContextWrapper, function_tool, input_guardrail
 
+from sec_llm.agents.scratchpad import SingleAgentResponse
 from sec_llm.compute import aggregate_quarters as _aggregate_quarters
 from sec_llm.compute import compute_growth as _compute_growth
 from sec_llm.compute import compute_margin as _compute_margin
@@ -205,4 +206,5 @@ sec_agent = Agent(
     tools=[get_income_statement, compute_growth, compute_margin, aggregate_quarters],
     input_guardrails=[scope_guardrail],
     model=_get_model(),
+    output_type=AgentOutputSchema(SingleAgentResponse, strict_json_schema=False),
 )

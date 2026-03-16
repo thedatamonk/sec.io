@@ -1,0 +1,81 @@
+[
+  {
+    "id": "ma_conv_01",
+    "description": "Single company revenue and net margin — Researcher + Quant",
+    "turns": [
+      {
+        "role": "user",
+        "message": "What was Apple's revenue and net margin for FY2024?",
+        "expected_behavior": "Boss calls Researcher for AAPL FY2024 income statement, then calls Quant for net margin computation. Reports revenue and net margin percentage.",
+        "expected_tool_calls": [
+          {"tool": "call_researcher"},
+          {"tool": "call_quant_analyst"}
+        ],
+        "expect_scratchpad": true
+      }
+    ]
+  },
+  {
+    "id": "ma_conv_02",
+    "description": "Multi-year revenue trend analysis — parallel Researcher fetches + Quant trend",
+    "turns": [
+      {
+        "role": "user",
+        "message": "Analyze Microsoft's revenue trend from FY2022 to FY2024. Show annual growth rates and CAGR.",
+        "expected_behavior": "Boss calls Researcher for MSFT FY2022, FY2023, FY2024 income statements, then calls Quant for trend analysis with growth rates and CAGR.",
+        "expected_tool_calls": [
+          {"tool": "call_researcher"},
+          {"tool": "call_quant_analyst"}
+        ],
+        "expect_scratchpad": true
+      }
+    ]
+  },
+  {
+    "id": "ma_conv_03",
+    "description": "Peer comparison R&D intensity — parallel Researcher + Quant ratio",
+    "turns": [
+      {
+        "role": "user",
+        "message": "Compare Apple and Microsoft's operating margins for FY2024. Which company has a higher operating margin?",
+        "expected_behavior": "Boss calls Researcher for both AAPL and MSFT FY2024, then calls Quant to compute operating margins for both, then compares them.",
+        "expected_tool_calls": [
+          {"tool": "call_researcher"},
+          {"tool": "call_quant_analyst"}
+        ],
+        "expect_scratchpad": true
+      }
+    ]
+  },
+  {
+    "id": "ma_conv_04",
+    "description": "Data integrity validation — Researcher + Validator",
+    "turns": [
+      {
+        "role": "user",
+        "message": "Fetch Apple's net income for FY2024 and validate that the value is consistent and reliable.",
+        "expected_behavior": "Boss calls Researcher for AAPL FY2024, then calls Validator to cross-reference the net income value for consistency.",
+        "expected_tool_calls": [
+          {"tool": "call_researcher"},
+          {"tool": "call_validator"}
+        ],
+        "expect_scratchpad": true
+      }
+    ]
+  },
+  {
+    "id": "ma_conv_05",
+    "description": "Error recovery — filing not found triggers alternate search",
+    "turns": [
+      {
+        "role": "user",
+        "message": "Can you find any available 10-K or 10-K/A filings for Tesla from FY2023? Search for alternate filing types if needed.",
+        "expected_behavior": "Boss calls Researcher which uses search_alternate_filings to find TSLA FY2023 filings across multiple form types. Reports available filings.",
+        "expected_tool_calls": [
+          {"tool": "call_researcher"}
+        ],
+        "expect_scratchpad": true
+      }
+    ]
+  }
+]

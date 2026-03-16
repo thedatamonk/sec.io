@@ -146,6 +146,86 @@ class EdgarClient:
         )
 
 
+    async def search_alternate_filings(
+        self,
+        ticker: str,
+        fiscal_year: int,
+        filing_types: list[str],
+    ) -> dict:
+        """Search for alternate filings across multiple form types for a given fiscal year."""
+        cache_key = f"alt_filings:{ticker}:{fiscal_year}:{','.join(sorted(filing_types))}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        result = await self._run_sync(
+            self._search_alternate_filings, ticker, fiscal_year, filing_types
+        )
+        self._cache.set(cache_key, result)
+        return result
+
+    @staticmethod
+    def _search_alternate_filings(
+        ticker: str,
+        fiscal_year: int,
+        filing_types: list[str],
+    ) -> dict:
+        from edgar import Company
+
+        try:
+            company = Company(ticker)
+        except Exception as exc:
+            return {"error": f"Company not found for ticker: {ticker}", "ticker": ticker}
+
+        results = []
+        for form in filing_types:
+            try:
+                filings = company.get_filings(form=form)
+                if filings is None:
+                    continue
+                for filing in filings:
+                    filing_date_val = getattr(filing, "filing_date", None)
+                    period_of_report = getattr(filing, "period_of_report", None)
+
+                    # Filter by fiscal year range (fiscal_year ± 1)
+                    include = False
+                    if filing_date_val is not None:
+                        if isinstance(filing_date_val, str):
+                            try:
+                                from datetime import date as _date
+                                filing_date_val = _date.fromisoformat(filing_date_val)
+                            except ValueError:
+                                filing_date_val = None
+                        if filing_date_val and filing_date_val.year in (fiscal_year, fiscal_year + 1):
+                            include = True
+                    if period_of_report is not None:
+                        if isinstance(period_of_report, str):
+                            try:
+                                from datetime import date as _date
+                                period_of_report = _date.fromisoformat(period_of_report)
+                            except ValueError:
+                                period_of_report = None
+                        if period_of_report and period_of_report.year == fiscal_year:
+                            include = True
+
+                    if include:
+                        results.append({
+                            "form_type": form,
+                            "filing_date": str(filing_date_val) if filing_date_val else None,
+                            "period_of_report": str(period_of_report) if period_of_report else None,
+                        })
+            except Exception:
+                continue
+
+        return {
+            "ticker": ticker,
+            "fiscal_year": fiscal_year,
+            "filing_types_searched": filing_types,
+            "filings": results,
+            "count": len(results),
+        }
+
+
 def _find_matching_filing(filings, fiscal_year: int, quarter: int | None) -> Any | None:
     """Find a filing matching the requested fiscal year and quarter.
 
